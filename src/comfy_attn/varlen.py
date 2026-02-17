@@ -127,6 +127,8 @@ def dispatch_attention_varlen(
     if _varlen_fn is None:
         _varlen_fn, _varlen_backend = _resolve_varlen_backend()
         log.info("Varlen attention: %s", _varlen_backend)
+        import sys
+        print(f"\033[33m[comfy-attn] Varlen attention: {_varlen_backend}\033[0m", file=sys.stderr, flush=True)
 
     return _varlen_fn(
         q, k, v, cu_seqlens_q, cu_seqlens_kv, max_seqlen_q, max_seqlen_kv,

@@ -1,6 +1,6 @@
 [project]
 name = "comfy-attn"
-version = "0.1.1"
+version = "0.1.2"
 description = "Attention dispatch for ComfyUI custom nodes - GPU-aware auto-detection with ComfyUI-native backends"
 readme = "README.md"
 license = {text = "MIT"}

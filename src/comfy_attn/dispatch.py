@@ -11,6 +11,7 @@ Usage:
 """
 
 import logging
+import sys
 from typing import Callable, Optional
 
 from . import detect
@@ -190,7 +191,8 @@ def dispatch_attention(
     """
     global _attn_fn
     if _attn_fn is None:
-        set_backend("auto")
+        label = set_backend("auto")
+        print(f"\033[33m[comfy-attn] Dense attention: {label}\033[0m", file=sys.stderr, flush=True)
 
     heads = q.shape[1]
     head_dim = q.shape[-1]

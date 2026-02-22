@@ -15,7 +15,7 @@ import math
 import torch
 import torch.nn as nn
 import comfy.model_management
-from .detect import get_conv_backend
+from comfy_sparse_attn.detect import get_conv_backend
 
 log = logging.getLogger("comfy_sparse_attn")
 

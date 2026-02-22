@@ -1,11 +1,8 @@
 # comfy-attn
 
-Attention dispatch for ComfyUI custom nodes — GPU-aware auto-detection with ComfyUI-native backends.
+Sparse / variable-length attention dispatch for ComfyUI custom nodes.
 
-Replaces per-node attention dispatch code with a shared package that:
-- Auto-detects the fastest attention backend for your GPU and installed packages
-- Routes through ComfyUI's native attention implementations (no duplicated backend code)
-- Caches dimension incompatibilities to avoid repeated failures
+Handles the varlen case that ComfyUI's built-in attention doesn't cover: packed sequences of different lengths across a batch, as produced by sparse 3D models (point clouds, voxels, VarLenTensors). For ordinary dense attention, use `optimized_attention_for_device` from ComfyUI directly.
 
 ## Quick Start
 
@@ -16,44 +13,34 @@ pip install comfy-attn
 ## Usage
 
 ```python
-from comfy_attn import set_backend, dispatch_attention
+from comfy_attn import dispatch_varlen_attention
 
-# In your model loader — pick a backend
-label = set_backend("auto")  # GPU-aware auto-detection (recommended)
-print(f"Attention: {label}")
-
-# Or let users choose via a node dropdown
-label = set_backend("sage")       # force SageAttention
-label = set_backend("flash_attn") # force FlashAttention
-label = set_backend("sdpa")       # force PyTorch SDPA
-
-# In your model's attention forward pass
-# q, k, v shape: (B, H, N, D)
-out = dispatch_attention(q, k, v)
-out = dispatch_attention(q, k, v, attn_mask=mask)  # mask forces SDPA
+# q, k, v: [T, H, D]  — total tokens packed across the batch
+# cu_seqlens_q / cu_seqlens_kv: [B+1] int32 cumulative lengths
+# max_seqlen_q / max_seqlen_kv: int, longest sequence in the batch
+out = dispatch_varlen_attention(
+    q, k, v,
+    cu_seqlens_q, cu_seqlens_kv,
+    max_seqlen_q, max_seqlen_kv,
+)
+# out: [T, H, D]
 ```
 
-## Auto-Detection Priority
+## Backend Priority
 
-`set_backend("auto")` picks the fastest available backend based on GPU architecture:
+Backends are selected at call time based on GPU compute capability and installed packages:
 
 | GPU Generation | Priority |
 |---|---|
-| Blackwell (SM 10.x) | sage3 > flash_fp8 > sage2 > flash > sdpa |
-| Hopper (SM 9.0) | flash_fp8 > sage2 > flash > sdpa |
-| Ada / Ampere (SM 8.x) | sage2 > flash > sdpa |
-| Older / CPU | sdpa |
+| Ada / Ampere / Hopper / Blackwell (SM ≥ 8.0) | sage2 > flash > xformers > sdpa |
+| Older / CPU | xformers > sdpa |
 
-Backends are only selected if the required package is installed. Install attention packages via [comfy-env](https://github.com/PozzettiAndrea/comfy-env) CUDA config or pip.
+Only installed backends are tried. The first that succeeds is used; failures fall through to the next.
 
-## How It Works
+## What This Package Is Not
 
-`comfy-attn` does **not** implement attention kernels. It routes to ComfyUI's built-in attention functions (`attention_sage`, `attention_flash`, `attention_pytorch`, etc.) which handle dtype casting, tensor layout, and error fallbacks.
-
-The package provides:
-1. **GPU-tiered auto-detection** — checks compute capability + installed packages
-2. **Thin dispatch layer** — maps `(B, H, N, D)` tensors to ComfyUI functions with `skip_reshape=True`
-3. **Dimension tracking** — caches head dimensions that fail for a backend, skips retries
+- **Not a dense attention dispatcher.** Use `comfy.ldm.modules.attention.optimized_attention_for_device` for `[B, H, N, D]` tensors.
+- **Not a kernel implementation.** Routes to ComfyUI's built-in `attention_sage`, `attention_flash`, `attention_pytorch`, etc., or to xformers/SDPA directly for the varlen case.
 
 ## License
 

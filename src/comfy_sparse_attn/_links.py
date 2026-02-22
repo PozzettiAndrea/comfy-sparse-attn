@@ -35,7 +35,7 @@ def setup_link(source: pathlib.Path, comfy_relative: str) -> bool:
         log.warning("comfy not found on sys.path, skipping sparse link setup")
         return False
 
-    comfy_dir = pathlib.Path(comfy.__file__).parent
+    comfy_dir = pathlib.Path(comfy.__path__[0])
     source = source.resolve()
     target = comfy_dir / comfy_relative
 

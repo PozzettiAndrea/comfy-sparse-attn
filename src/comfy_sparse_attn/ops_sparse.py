@@ -25,7 +25,7 @@ import torch.nn.functional as F
 import comfy.ops
 import comfy.model_management
 from comfy.ops import cast_bias_weight, uncast_bias_weight, CastWeightBiasOp, run_every_op
-from .detect import (
+from comfy_sparse_attn.detect import (
     get_conv_backend, set_conv_backend,
     SPCONV_ALGO, FLEX_GEMM_ALGO, FLEX_GEMM_HASHMAP_RATIO,
 )

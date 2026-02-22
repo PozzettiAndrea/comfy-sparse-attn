@@ -1,14 +1,14 @@
 [project]
-name = "comfy-attn"
-version = "0.1.2"
-description = "Attention dispatch for ComfyUI custom nodes - GPU-aware auto-detection with ComfyUI-native backends"
+name = "comfy-sparse-attn"
+version = "0.0.1"
+description = "Sparse / variable-length attention dispatch for ComfyUI custom nodes"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
 authors = [
     {name = "Andrea Pozzetti"}
 ]
-keywords = ["comfyui", "attention", "sdpa", "flash-attention", "sage-attention", "gpu"]
+keywords = ["comfyui", "attention", "sparse", "varlen", "flash-attention", "sage-attention", "sdpa"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -21,16 +21,16 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/PozzettiAndrea/comfy-attn"
-Repository = "https://github.com/PozzettiAndrea/comfy-attn"
-Issues = "https://github.com/PozzettiAndrea/comfy-attn/issues"
+Homepage = "https://github.com/PozzettiAndrea/comfy-sparse-attn"
+Repository = "https://github.com/PozzettiAndrea/comfy-sparse-attn"
+Issues = "https://github.com/PozzettiAndrea/comfy-sparse-attn/issues"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/comfy_attn"]
+packages = ["src/comfy_sparse_attn"]
 
 [tool.ruff]
 line-length = 100

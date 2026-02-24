@@ -14,7 +14,6 @@ from fractions import Fraction
 import math
 import torch
 import torch.nn as nn
-import comfy.model_management
 from comfy_sparse_attn.detect import get_conv_backend
 
 log = logging.getLogger("comfy_sparse_attn")
@@ -175,6 +174,7 @@ class VarLenTensor:
         return self.replace(new_feats)
 
     def cuda(self) -> 'VarLenTensor':
+        import comfy.model_management
         device = comfy.model_management.get_torch_device()
         new_feats = self.feats.to(device)
         return self.replace(new_feats)
@@ -652,6 +652,7 @@ class SparseTensor(VarLenTensor):
         return self.replace(new_feats, new_coords)
 
     def cuda(self) -> 'SparseTensor':
+        import comfy.model_management
         device = comfy.model_management.get_torch_device()
         new_feats = self.feats.to(device)
         new_coords = self.coords.to(device)

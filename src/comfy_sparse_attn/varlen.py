@@ -131,6 +131,12 @@ def dispatch_varlen_attention(
         print(f"\033[33m[comfy-attn] Varlen attention: {_varlen_backend}\033[0m",
               file=sys.stderr, flush=True)
 
-    return _varlen_fn(
-        q, k, v, cu_seqlens_q, cu_seqlens_kv, max_seqlen_q, max_seqlen_kv,
-    )
+    try:
+        return _varlen_fn(
+            q, k, v, cu_seqlens_q, cu_seqlens_kv, max_seqlen_q, max_seqlen_kv,
+        )
+    except (AssertionError, RuntimeError) as e:
+        log.warning("Error running %s attention: %s, using SDPA fallback", _varlen_backend, e)
+        return _sdpa_varlen(
+            q, k, v, cu_seqlens_q, cu_seqlens_kv, max_seqlen_q, max_seqlen_kv,
+        )

@@ -204,7 +204,7 @@ def _flex_gemm_conv3d_init(self, in_channels, out_channels, kernel_size, stride=
 
 
 def _flex_gemm_conv3d_forward(self, x):
-    flex_gemm_mod, sparse_submanifold_conv3d = _load_flex_gemm()
+    flex_gemm_mod, _ = _load_flex_gemm()
     flex_gemm_mod.ops.spconv.set_algorithm(FLEX_GEMM_ALGO)
     flex_gemm_mod.ops.spconv.set_hashmap_ratio(FLEX_GEMM_HASHMAP_RATIO)
 
@@ -215,14 +215,22 @@ def _flex_gemm_conv3d_forward(self, x):
     feats = x.feats
     if feats.dtype != self.weight.dtype:
         feats = feats.to(self.weight.dtype)
-    out, neighbor_cache_ = sparse_submanifold_conv3d(
-        feats,
-        x.coords,
-        torch.Size([*x.shape, *x.spatial_shape]),
-        self.weight,
-        self.bias,
-        neighbor_cache,
-        self.dilation
+
+    # Bypass autograd Function.apply() — direct static method calls avoid
+    # save_for_backward() pinning input tensors during inference.
+    from flex_gemm.ops.spconv.submanifold_conv3d import SubMConv3dFunction
+    if neighbor_cache is None:
+        neighbor_cache_ = SubMConv3dFunction._compute_neighbor_cache(
+            x.coords,
+            torch.Size([*x.shape, *x.spatial_shape]),
+            (Kw, Kh, Kd),
+            self.dilation
+        )
+    else:
+        neighbor_cache_ = neighbor_cache
+
+    out = SubMConv3dFunction._sparse_submanifold_conv_forward(
+        feats, neighbor_cache_, self.weight, self.bias
     )
 
     if neighbor_cache is None:

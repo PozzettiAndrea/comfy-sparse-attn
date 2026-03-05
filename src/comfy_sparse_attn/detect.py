@@ -70,7 +70,7 @@ def _detect_available_conv_backend() -> str:
     for backend in backends:
         try:
             if backend == 'flex_gemm':
-                import flex_gemm  # noqa: F401
+                import flex_gemm_ap  # noqa: F401
                 log.info("Auto-detected conv backend: flex_gemm")
                 return backend
             elif backend == 'spconv':

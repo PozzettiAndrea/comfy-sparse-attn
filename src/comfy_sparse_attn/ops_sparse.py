@@ -170,8 +170,8 @@ _flex_gemm_spconv_ops = None
 def _load_flex_gemm():
     global _flex_gemm_mod, _flex_gemm_spconv_ops
     if _flex_gemm_mod is None:
-        import flex_gemm as _fg
-        from flex_gemm.ops.spconv import sparse_submanifold_conv3d as _ssc
+        import flex_gemm_ap as _fg
+        from flex_gemm_ap.ops.spconv import sparse_submanifold_conv3d as _ssc
         _flex_gemm_mod = _fg
         _flex_gemm_spconv_ops = _ssc
     return _flex_gemm_mod, _flex_gemm_spconv_ops
@@ -216,9 +216,38 @@ def _flex_gemm_conv3d_forward(self, x):
     if feats.dtype != self.weight.dtype:
         feats = feats.to(self.weight.dtype)
 
+    # --- TILED PATH ---
+    max_tile = getattr(self, 'max_voxels_per_tile', 0)
+    N = feats.shape[0]
+    if max_tile > 0 and N > max_tile:
+        from flex_gemm_ap.ops.spconv.submanifold_conv3d import SubMConv3dFunction
+        _ma = torch.cuda.memory_allocated
+        feats_mb = feats.nelement() * feats.element_size() // 1048576
+        print(f"[sparse-conv] TILED: N={N:,} max_tile={max_tile:,} feats={feats_mb}MB alloc={_ma()//1048576}MB", flush=True)
+        # Offload feats to CPU HERE so caller refs don't pin GPU memory
+        coords = x.coords
+        shape = torch.Size([*x.shape, *x.spatial_shape])
+        feats_cpu = feats.cpu()
+        del feats
+        x.data['feats'] = feats_cpu  # replace GPU feats with CPU copy (frees GPU)
+        torch.cuda.empty_cache()
+        print(f"[sparse-conv] TILED feats offloaded to CPU, alloc={_ma()//1048576}MB", flush=True)
+        out_feats = SubMConv3dFunction.tiled_forward(
+            feats_cpu, coords, shape,
+            self.weight, self.bias,
+            (Kw, Kh, Kd), self.dilation,
+            max_voxels_per_tile=max_tile,
+        )
+        del feats_cpu
+        print(f"[sparse-conv] TILED done: out={out_feats.nelement()*out_feats.element_size()//1048576}MB "
+              f"alloc={_ma()//1048576}MB", flush=True)
+        return x.replace(out_feats)
+
+    # --- NORMAL PATH ---
     # Bypass autograd Function.apply() — direct static method calls avoid
     # save_for_backward() pinning input tensors during inference.
-    from flex_gemm.ops.spconv.submanifold_conv3d import SubMConv3dFunction
+    from flex_gemm_ap.ops.spconv.submanifold_conv3d import SubMConv3dFunction
+    _cache_hit = neighbor_cache is not None
     if neighbor_cache is None:
         neighbor_cache_ = SubMConv3dFunction._compute_neighbor_cache(
             x.coords,
@@ -229,9 +258,17 @@ def _flex_gemm_conv3d_forward(self, x):
     else:
         neighbor_cache_ = neighbor_cache
 
+    _cache_mb = sum(v.nelement() * v.element_size() for v in vars(neighbor_cache_).values() if isinstance(v, torch.Tensor)) // 1048576
+    print(f"[sparse-conv] N={feats.shape[0]:,} Ci={Ci} Co={Co} "
+          f"feats={feats.nelement()*feats.element_size()//1048576}MB "
+          f"cache={_cache_mb}MB ({'hit' if _cache_hit else 'miss'}) "
+          f"w_dev={self.weight.device} alloc={torch.cuda.memory_allocated()//1048576}MB", flush=True)
+
     out = SubMConv3dFunction._sparse_submanifold_conv_forward(
         feats, neighbor_cache_, self.weight, self.bias
     )
+
+    print(f"[sparse-conv] out={out.nelement()*out.element_size()//1048576}MB alloc={torch.cuda.memory_allocated()//1048576}MB", flush=True)
 
     if neighbor_cache is None:
         x.register_spatial_cache(neighbor_cache_key, neighbor_cache_)

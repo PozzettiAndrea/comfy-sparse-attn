@@ -131,10 +131,22 @@ def dispatch_varlen_attention(
         print(f"\033[33m[comfy-attn] Varlen attention: {_varlen_backend}\033[0m",
               file=sys.stderr, flush=True)
 
+    # SageAttention requires fp16/bf16 — cast if needed
+    import torch
+    orig_dtype = q.dtype
+    if _varlen_backend == "sage2" and orig_dtype not in (torch.float16, torch.bfloat16):
+        cast_dtype = torch.bfloat16
+        q, k, v = q.to(cast_dtype), k.to(cast_dtype), v.to(cast_dtype)
+    else:
+        cast_dtype = None
+
     try:
-        return _varlen_fn(
+        out = _varlen_fn(
             q, k, v, cu_seqlens_q, cu_seqlens_kv, max_seqlen_q, max_seqlen_kv,
         )
+        if cast_dtype is not None:
+            out = out.to(orig_dtype)
+        return out
     except (AssertionError, RuntimeError) as e:
         log.warning("Error running %s attention: %s, using SDPA fallback", _varlen_backend, e)
         return _sdpa_varlen(

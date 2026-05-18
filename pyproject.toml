@@ -1,6 +1,6 @@
 [project]
 name = "comfy-sparse-attn"
-version = "0.1.0"
+version = "0.1.3"
 description = "Sparse / variable-length attention dispatch for ComfyUI custom nodes"
 readme = "README.md"
 license = {text = "MIT"}

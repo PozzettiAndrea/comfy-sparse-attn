@@ -1,60 +1,68 @@
 """
-Filesystem link setup: inject sparse primitives into the comfy namespace.
+Namespace injection: make `from comfy.sparse import ...` (and ops_sparse,
+attention_sparse) resolve to the modules shipped by this package, so consumer
+code can be written as if the upstream ComfyUI PR were already merged.
 
-Creates symlinks at comfy/{target} → source so that code written as
-    from comfy.ops_sparse import ...
-    from comfy.attention_sparse import ...
-    from comfy.sparse import VarLenTensor
-works NOW, before the PR lands in ComfyUI main.
+Implementation is purely in-memory: `sys.modules['comfy.<name>']` is pointed
+at our own module, and the attribute is set on the `comfy` package. No
+filesystem operations — earlier versions used `pathlib.Path.symlink_to`,
+which fails on Windows containers without `SeCreateSymbolicLinkPrivilege`
+(`OSError: [WinError 1314] A required privilege is not held by the client`).
 
-When ComfyUI ships the real files, the links become no-ops: a real file
-(non-symlink) at the target path is left untouched.
+When ComfyUI ships these files natively, `setup_link` detects the real file
+under `comfy/` and refuses to override — the native module wins.
 """
 
+import importlib
 import logging
 import pathlib
+import sys
 
 log = logging.getLogger("comfy_sparse_attn")
 
 
 def setup_link(source: pathlib.Path, comfy_relative: str) -> bool:
     """
-    Create a symlink at comfy/{comfy_relative} → source.
+    Alias `comfy.<name>` to `comfy_sparse_attn.<name>` via `sys.modules`.
 
-    Skips if:
-      - The target is a real file (ComfyUI shipped it natively — nothing to do).
-      - The target is already a symlink pointing to source.
+    `name` is derived from `comfy_relative` by stripping a `.py` suffix.
+    The `source` argument is accepted for backward compatibility with the
+    previous symlink-based API; it is not read.
 
-    Removes and recreates if the target is a stale symlink pointing elsewhere.
+    Skips (returns False) when:
+      - ComfyUI is not importable from this interpreter.
+      - A real file exists at `comfy/<comfy_relative>` (ComfyUI shipped
+        this module natively — native wins on import).
+      - `sys.modules['comfy.<name>']` is already populated (someone else
+        aliased first, or the module was already imported).
+      - `comfy_sparse_attn.<name>` itself is not importable.
 
-    Returns True if a new link was created.
+    Returns True iff a fresh alias was installed.
     """
     try:
         import comfy
     except ImportError:
-        log.warning("comfy not found on sys.path, skipping sparse link setup")
+        log.warning("comfy not found on sys.path, skipping sparse alias setup")
         return False
+
+    name = comfy_relative.removesuffix(".py")
+    fq = f"comfy.{name}"
 
     comfy_dir = pathlib.Path(comfy.__path__[0])
-    source = source.resolve()
-    target = comfy_dir / comfy_relative
-
-    if not source.exists():
-        log.warning(f"Source does not exist, skipping: {source}")
+    if (comfy_dir / comfy_relative).is_file():
+        log.debug("comfy/%s is a native file, skipping alias", comfy_relative)
         return False
 
-    if target.exists() and not target.is_symlink():
-        # Real file — ComfyUI has shipped this natively.
-        log.debug(f"comfy/{comfy_relative} is a real file (native), skipping junction")
+    if fq in sys.modules:
         return False
 
-    if target.is_symlink():
-        if target.resolve() == source:
-            return False  # Already correctly linked.
-        log.debug(f"comfy/{comfy_relative}: stale symlink, relinking")
-        target.unlink()
+    try:
+        mod = importlib.import_module(f"comfy_sparse_attn.{name}")
+    except ImportError as e:
+        log.warning("comfy_sparse_attn.%s not importable: %s", name, e)
+        return False
 
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.symlink_to(source)
-    log.info(f"Linked comfy/{comfy_relative} -> {source}")
+    sys.modules[fq] = mod
+    setattr(comfy, name, mod)
+    log.info("Aliased %s -> comfy_sparse_attn.%s", fq, name)
     return True
